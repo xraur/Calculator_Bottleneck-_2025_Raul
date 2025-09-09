@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculator Bottleneck v1.0 © 2025 Raul</title>
+<style>
+  html,body{margin:0;padding:0;background:#0e0f12;color:#e8e8e8;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  header{padding:16px 20px;background:#14161b;border-bottom:1px solid #23262d;position:sticky;top:0;z-index:3}
+  h1{margin:0;font-size:18px}
+  main{max-width:1220px;margin:0 auto;padding:16px 20px}
+  .card{background:#14161b;border:1px solid #23262d;border-radius:12px;padding:12px;margin-bottom:12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:210px}
+  label{font-size:13px;opacity:.9}
+  input,button,select{background:#0f1115;border:1px solid #2a2f3a;color:#e8e8e8;border-radius:8px;padding:8px 10px;font-size:14px}
+  input:focus,select:focus{outline:none;border-color:#48d1dc}
+  .btn{cursor:pointer;border-radius:10px;padding:10px 14px;border:1px solid #2a2f3a}
+  .btn-primary{background:#1dd9d9;color:#061214;border-color:#1dd9d9;font-weight:600}
+  .muted{opacity:.75;font-size:12px}
+  .chip{display:inline-block;margin:4px 6px 0 0;padding:2px 8px;border:1px solid #2a2f3a;border-radius:999px;font-size:12px}
+  .warn{margin-top:8px;color:#ffcc66;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;border-bottom:1px solid #23262d;vertical-align:top;text-align:left}
+  th{background:#0f1115;position:sticky;top:92px;z-index:2}
+  tbody tr:nth-child(odd){background:#12141a}
+  tbody tr:nth-child(even){background:#0f1115}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .evt{white-space:pre-line}
+  .evt-line{display:block;padding:2px 0}
+  .evt-line+.evt-line{border-top:1px dashed #2a2f3a;margin-top:2px}
+  .toggles{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:8px;margin-top:6px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:10}
+  .box{background:#14161b;border:1px solid #2a2f3a;border-radius:12px;padding:16px;min-width:360px;max-width:520px}
+  .box h3{margin:0 0 6px 0;font-size:16px}
+  .pills{display:flex;flex-wrap:wrap;gap:6px;max-height:40vh;overflow:auto;margin:8px 0}
+  .pill{border:1px solid #2a2f3a;border-radius:999px;padding:6px 10px;cursor:pointer}
+  .pill.active{border-color:#48d1dc}
+  .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+  .okcell{background:#0f1b12;border-radius:6px;border:1px solid #174a24;padding:2px 6px;display:inline-block}
+  .defcell{background:#1b150f;border-radius:6px;border:1px solid #4a2b17;padding:2px 6px;display:inline-block}
+  .subrow th{border-top:2px solid #3a8c8c}
+</style>
+</head>
+<body>
+<header style="display:flex;align-items:center;justify-content:center;position:relative">
+  <h1 style="margin:0;font-size:20px;text-align:center;flex:1">Calculator Bottleneck v1.0</h1>
+  <div style="position:absolute;right:20px;font-size:15px;opacity:.85;font-weight:600">© 2025 Raul</div>
+</header>
+
+
+<main>
+
+<section class="card">
+  <div class="row">
+    <div>
+      <label>Start tură (24h sau „07:08 PM”)</label><br>
+      <input id="startTime" value="07:00 PM"><div class="muted">ex: 19:00 ori 07:00 AM/PM</div>
+    </div>
+    <div><label>Durată (ore)</label><br><input id="duration" type="number" value="12" min="1" max="24"></div>
+    <div><label>Pauză masă (min)</label><br><input id="breakMeal" type="number" value="30" min="0" step="5"></div>
+    <div><label>Pauză scurtă (min)</label><br><input id="breakShort" type="number" value="15" min="0" step="5"></div>
+  </div>
+
+  <div class="toggles">
+    <label><input id="togSedinta" type="checkbox" checked> Ședință 10–15′</label>
+    <label><input id="togValid"   type="checkbox" checked> Validare linie 10–15′</label>
+    <label><input id="tog5S"      type="checkbox" checked> 5S+1 10–15′</label>
+    <label><input id="togCO"      type="checkbox" checked> Schimbare produs 20–40′</label>
+    <label><input id="togNoz"     type="checkbox" checked> Curățare nozzel 5–15′</label>
+    <label><input id="togMnt"     type="checkbox" checked> Mentenanță 10–50′</label>
+  </div>
+</section>
+
+<section class="card">
+  <div class="row" style="align-items:flex-end">
+    <div style="flex:2"><label>Nume produs</label><br><input id="pName" value="801"></div>
+    <div><label>Rată/oră</label><br><input id="pRate" type="number" min="1" value="10"></div>
+    <div><label>Target total</label><br><input id="pTarget" type="number" min="0" value="105"></div>
+    <div><label>Realizat total (opțional)</label><br><input id="pActual" type="number" min="0" value="90"></div>
+    <div><button class="btn btn-primary" onclick="addProduct()">Adaugă produs</button></div>
+  </div>
+  <div id="prodList" class="muted" style="margin-top:6px"><i>Niciun produs.</i></div>
+</section>
+
+<section class="card">
+  <div class="row">
+    <button class="btn btn-primary" onclick="calc()">Calculează</button>
+    <div class="muted">Apasă din nou <b>Calculează</b> pentru o distribuție nouă.</div>
+  </div>
+  <div id="capWarn" class="warn" style="display:none"></div>
+</section>
+
+<section class="card" id="out"><div class="muted">Adaugă produse și calculează.</div></section>
+
+<!-- modal alegere oră -->
+<div id="modal" class="modal" aria-hidden="true">
+  <div class="box">
+    <h3 id="mTitle">Alege ora</h3>
+    <div class="muted" id="mSub" style="margin-bottom:6px"></div>
+    <div id="mPills" class="pills"></div>
+    <div class="actions">
+      <button class="btn" id="mSkip">Skip</button>
+      <button class="btn btn-primary" id="mOK">OK</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Calculator plăci (standalone) -->
+<section class="card" id="calc-panel">
+  <h3 style="margin:6px 0 10px 0;font-size:15px">Calculator plăci</h3>
+
+  <div class="row">
+    <div>
+      <label>Plăci pe panel (câte plăci sunt fizic pe panel)</label><br>
+      <input id="cp_panel" type="number" min="1" placeholder="ex: 4">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Plăci detectate la 1 panel scanat (câte plăci apar scanate când scanezi un panel)</label><br>
+      <input id="cp_aparPanel" type="number" min="1" placeholder="ex: 6">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Total plăci detectate la acest PN (câte plăci apar scanate în total la acest PN)</label><br>
+      <input id="cp_scanariTot" type="number" min="0" placeholder="ex: 12">
+    </div>
+  </div>
+
+  <!-- rând compact: buton mic stânga, rezultat aliniat dreapta -->
+  <div class="row" style="align-items:center;gap:12px">
+    <div class="noflex">
+      <button class="btn btn-primary btn-sm nowrap" onclick="cp_calculeaza()">Calculează</button>
+    </div>
+    <div id="cp_msg" class="muted noflex"></div>
+    <div class="flexfill"></div>
+    <div id="cp_out" class="noflex mono"></div>
+  </div>
+</section>
+<style>
+/* — utilitare pt. calculator — */
+.btn-sm{padding:6px 10px;font-size:12px;border-radius:8px}
+.nowrap{white-space:nowrap}
+.noflex{flex:0 0 auto}
+.flexfill{flex:1 1 auto}
+</style>
+
+
+</main>
+
+<script>
+/* ===== RANGES ===== */
+const RANGE={ sedinta:[10,15], valid:[10,15], s5:[10,15], co:[20,40], nozzle:[5,15], mnt:[10,50] };
+
+/* ===== FLAGS ===== */
+let SEDINTA_PLACED=false;
+let S5_PLACED=false;
+
+/* ===== UTILS ===== */
+let SEED=1, products=[];
+function rnd(){SEED=(SEED*9301+49297)%233280;return SEED/233280;}
+function pad2(x){return (x<10?'0'+x:''+x)}
+function fmtMin(x){return (x|0)+'′'}
+function parseTime(t){
+  t=(t||'').trim();
+  const ampm=/\b(am|pm)\b/i.test(t);
+  if(ampm){const m=t.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)/i);if(!m)return{h:7,m:0};
+    let h=+m[1],mi=+(m[2]||0),ap=m[3].toLowerCase();if(ap==='pm'&&h<12)h+=12;if(ap==='am'&&h===12)h=0;return{h:h%24,m:mi%60};}
+  const m=t.match(/(\d{1,2}):(\d{2})/);if(!m)return{h:7,m:0};return{h:+m[1]%24,m:+m[2]%60};
+}
+function addMin(h,m,add){const T=h*60+m+add;return{h:Math.floor(T/60)%24,m:T%60}}
+function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
+function toInts(weights,total){
+  const sum=weights.reduce((a,b)=>a+b,0);if(sum<=0||total<=0)return weights.map(_=>0);
+  const scaled=weights.map(w=>w/sum*total), base=scaled.map(x=>Math.floor(x));
+  let need=total-base.reduce((a,b)=>a+b,0);
+  const ord=scaled.map((x,i)=>({i,frac:x-Math.floor(x)+rnd()*1e-6})).sort((a,b)=>b.frac-a.frac);
+  for(let k=0;k<ord.length&&need>0;k++){base[ord[k].i]++;need--;}
+  return base;
+}
+
+/* ===== PAUZE ===== */
+const MEAL_WINDOWS=[[22*60,23*60],[10*60,11*60]];
+const SHORT_WINDOWS=[[4*60,5*60],[16*60,17*60]];
+function ovl(a1,a2,b1,b2){const x=Math.max(a1,b1),y=Math.min(a2,b2);return Math.max(0,y-x)}
+function ovlRep(A,B,s,e){const D=1440;let k0=Math.floor((A-e)/D),k1=Math.floor((B-s)/D),t=0;for(let k=k0;k<=k1;k++)t+=ovl(A,B,s+k*D,e+k*D);return t}
+
+/* ===== UI PRODUSE ===== */
+function addProduct(){
+  const name=document.getElementById('pName').value.trim();
+  const rate=+document.getElementById('pRate').value||0;
+  const target=+document.getElementById('pTarget').value||0;
+  const aS=(document.getElementById('pActual').value||'').trim();
+  const actual=aS===''?null:+aS;
+  if(!name||rate<=0){alert('Completează nume și rată.');return;}
+  products.push({name,rate,target,actual});
+  renderProdList();
+}
+function renderProdList(){
+  const box=document.getElementById('prodList');
+  if(products.length===0){box.innerHTML='<i>Niciun produs.</i>';return;}
+  box.innerHTML='<b>Produse:</b> '+products.map((p,i)=>`<span class="chip">${i+1}. ${p.name} — ${p.rate}/h, target ${p.target}${p.actual!=null?`, realizat ${p.actual}`:''}</span>`).join(' ')
+    +' <button class="btn" onclick="products=[];renderProdList()">reset</button>';
+}
+
+/* ===== ORE & EVENIMENTE ===== */
+function buildHours(){
+  const st=parseTime(document.getElementById('startTime').value);
+  const dur=+document.getElementById('duration').value||12;
+  const meal=+document.getElementById('breakMeal').value||0;
+  const short=+document.getElementById('breakShort').value||0;
+  const startAbs=st.h*60+st.m, hours=[];
+  for(let i=0;i<dur;i++){
+    const a1=startAbs+i*60,a2=a1+60,s=addMin(st.h,st.m,i*60),e=addMin(st.h,st.m,(i+1)*60);
+    const h={idx:i,label:`${pad2(s.h)}:${pad2(s.m)}–${pad2(e.h)}:${pad2(e.m)}`,events:[],prod:'',runRate:0,plan:0,act:0,isStart:false,prodIndex:-1,abs1:a1,abs2:a2};
+    const mealOv=MEAL_WINDOWS.map(([S,E])=>ovlRep(a1,a2,S,E)).reduce((x,y)=>x+y,0);
+    const shortOv=SHORT_WINDOWS.map(([S,E])=>ovlRep(a1,a2,S,E)).reduce((x,y)=>x+y,0);
+    const mealMin=Math.min(meal,mealOv), shortMin=Math.min(short,shortOv);
+    if(mealMin>0) h.events.push({label:'Pauză masă',minutes:mealMin});
+    else if(shortMin>0) h.events.push({label:'Pauză',minutes:shortMin});
+    hours.push(h);
+  }
+  return hours;
+}
+function pauseMin(h){return h.events.filter(e=>e.label.startsWith('Pauză')).reduce((s,e)=>s+e.minutes,0)}
+function totalMin(h){return h.events.reduce((s,e)=>s+e.minutes,0)}
+function freeMin(h){return Math.max(0,60-totalMin(h))}
+function motivs(h){return h.events.filter(e=>!e.label.startsWith('Pauză'))}
+function samePrev(hours,i,label){const p=hours[i-1];return !!(p && motivs(p).some(e=>e.label===label))}
+function canPlaceLabel(hours,h,i,label){
+  const ms=motivs(h);
+  if(i===0){
+    if(label==='Ședință' && ms.length===1 && ms[0].label==='Validare linie') return true;
+    if(label==='Validare linie' && ms.length===1 && ms[0].label==='Ședință') return true;
+  }
+  // fără "nozzel" back-to-back și în general fără același motiv consecutiv
+  if(label && samePrev(hours,i,label)) return false;
+  return ms.length===0;
+}
+function addEvent(h,label,min){const use=Math.min(min,freeMin(h));if(use>0)h.events.push({label,minutes:use});return use}
+
+/* ===== PLAN ===== */
+function planProduct(hours,startIdx,P,prodIndex){
+  let cur=startIdx,remain=P.target,first=true,idxs=[],caps=[];
+  while(remain>0 && cur<hours.length){
+    const h=hours[cur]; const active=Math.max(0,60-pauseMin(h));
+    const cap=(P.rate*active)/60;
+    if(cap>0){
+      if(!h.prod){h.prod=P.name;h.prodIndex=prodIndex;if(first){h.isStart=true;first=false;}}
+      const use=Math.min(cap,remain); caps.push(use); idxs.push(cur); remain-=use; h.runRate=Math.floor(cap);
+    }
+    cur++;
+  }
+  const ints=toInts(caps,P.target); idxs.forEach((i,k)=>hours[i].plan+=ints[k]);
+  return {hourIdx:idxs,planInts:ints,endIdx:cur};
+}
+
+/* ===== MODAL ===== */
+function chooseHour(title, sub, hours, eligibleIdxs){
+  return new Promise(resolve=>{
+    const modal=document.getElementById('modal');
+    const t=document.getElementById('mTitle'), s=document.getElementById('mSub'), pills=document.getElementById('mPills');
+    const ok=document.getElementById('mOK'), skip=document.getElementById('mSkip');
+    t.textContent=title; s.textContent=sub||''; pills.innerHTML='';
+    let pick=null;
+    eligibleIdxs.forEach(i=>{
+      const el=document.createElement('span'); el.className='pill'; el.textContent=hours[i].label;
+      el.onclick=()=>{pick=i; Array.from(pills.children).forEach(x=>x.classList.remove('active')); el.classList.add('active');};
+      pills.appendChild(el);
+    });
+    ok.onclick=()=>{modal.style.display='none'; resolve(pick);}
+    skip.onclick=()=>{modal.style.display='none'; resolve(eligibleIdxs.length?eligibleIdxs[Math.floor(rnd()*eligibleIdxs.length)]:null);}
+    modal.style.display='flex';
+  });
+}
+
+/* ===== REASONS ===== */
+function randIn([a,b]){ return a + Math.floor(rnd()*(b-a+1)); }
+function eligibleIn(hours, idxList, minNeed, label){
+  return idxList.filter(i =>
+    freeMin(hours[i]) >= minNeed &&
+    canPlaceLabel(hours, hours[i], i, label || 'x')
+  );
+}
+
+
+// (opțional) dacă mai folosești eligible vechi pe undeva
+function eligible(hours, minNeed, label){
+  const all = hours.map((_,i)=>i);
+  return eligibleIn(hours, all, minNeed, label);
+}
+
+
+
+async function applyReasons(hours, idxs, P, prodIndex, prodCount, toggles){
+  const plan  = idxs.reduce((s,i)=>s+hours[i].plan,0);
+  const want  = (P.actual==null ? plan : P.actual);
+  let deficitMin = Math.ceil(((plan - want) / (P.rate||1)) * 60);
+  if (deficitMin <= 0) return;
+
+  const startOfShift = 0;
+  const first = idxs[0];
+  const last  = idxs[idxs.length-1];
+
+  const place = (i,label,min) => {
+    if (i==null || min<=0) return 0;
+    const h = hours[i];
+    if (!canPlaceLabel(hours,h,i,label)) return 0;
+    return addEvent(h, label, Math.min(min, freeMin(h)));
+  };
+
+  const anyFreeIn = (arr, minNeed, label) =>
+    arr.some(i => freeMin(hours[i]) >= minNeed &&
+      canPlaceLabel(hours, hours[i], i, label || 'x'));
+
+  // 1) Ședință – început tură (o dată)
+  if (toggles.sedinta && !SEDINTA_PLACED && deficitMin>0) {
+    const chunk = clamp(deficitMin, RANGE.sedinta[0], RANGE.sedinta[1]);
+    const used  = place(startOfShift, 'Ședință', chunk);
+    if (used>0) { deficitMin -= used; SEDINTA_PLACED = true; }
+  }
+
+  // 2) Schimbare produs – ÎNAINTEA Validării, doar dacă e al doilea produs sau mai multe
+  if (toggles.co && prodIndex>0 && deficitMin>=RANGE.co[0]) {
+    const need  = clamp(deficitMin, RANGE.co[0], RANGE.co[1]);
+    const used  = place(first, 'Schimbare produs', need);
+    if (used>0) deficitMin -= used;
+  }
+
+  // 3) Validare linie – la începutul produsului
+  if (toggles.valid && deficitMin>0) {
+    const need = clamp(deficitMin, RANGE.valid[0], RANGE.valid[1]);
+    const used = place(first, 'Validare linie', need);
+    if (used>0) deficitMin -= used;
+  }
+
+  // 4) 5S+1 – doar o dată, la finalul turei
+  if (toggles.s5 && !S5_PLACED && prodIndex===prodCount-1 && deficitMin>0) {
+    const need = clamp(deficitMin, RANGE.s5[0], RANGE.s5[1]);
+    const used = place(last, '5S+1', need);
+    if (used>0) { deficitMin -= used; S5_PLACED = true; }
+  }
+
+  // dacă nu mai e loc în orele produsului pentru motive 5–6, scriu notă și mă opresc
+  const minNeed = Math.min(RANGE.nozzle[0], RANGE.mnt[0]);
+  if (!anyFreeIn(idxs, minNeed)) {
+    addEvent(hours[last], 'Intervenție (fără timp disponibil)', 0);
+    return;
+  }
+
+  // 5) Curățare nozzel — max 2, fără back-to-back, doar în orele produsului
+  if (toggles.noz) {
+    let placed=0;
+    while (deficitMin>=RANGE.nozzle[0] && placed<2) {
+      const pool = eligibleIn(hours, idxs, RANGE.nozzle[0], 'Curățare nozzel');
+      if (!pool.length) break;
+      const idx  = await chooseHour(`Curățare nozzel — ${P.name}`, `Alege ora (rămas ${deficitMin}′)`, hours, pool);
+      const need = clamp(deficitMin, RANGE.nozzle[0], RANGE.nozzle[1]);
+      const used = place(idx, 'Curățare nozzel', need);
+      if (!used) break;
+      deficitMin -= used; placed++;
+    }
+  }
+
+  // 6) Mentenanță — restul deficitului, doar în orele produsului, fără back-to-back
+  if (toggles.mnt) {
+    let guard=0;
+    while (deficitMin>0 && guard<24) {
+      const pool = eligibleIn(hours, idxs, RANGE.mnt[0], 'Mentenanță');
+      if (!pool.length) break;
+      const idx  = await chooseHour(`Mentenanță — ${P.name}`, `Alege ora (rămas ${deficitMin}′)`, hours, pool);
+      const need = clamp(deficitMin, RANGE.mnt[0], RANGE.mnt[1]);
+      const used = place(idx, 'Mentenanță', need);
+      if (!used) break;
+      deficitMin -= used; guard++;
+    }
+  }
+}
+
+
+
+
+/* === AUTO COMPLETION: dacă după motive capacitatea > realizat → adăugăm "Mentenanță (auto)" până capTot ≤ realizat === */
+function capTotFor(hours, idxs, rate){
+  return idxs.reduce((s,i)=>{
+    const lost=Math.min(60,totalMin(hours[i]));
+    const earned=60-lost;
+    return s + Math.floor(rate*earned/60);
+  },0);
+}
+
+function tryAutoShrink(hours, idxs, rate, want){
+  let cap = capTotFor(hours, idxs, rate);
+  if (cap <= want) return;
+
+  let needMin = Math.ceil(((cap - want) / rate) * 60);
+  let guard=0;
+
+  while (needMin>0 && guard<64){
+    // prima oră din intervalul produsului cu loc liber și fără back-to-back mentenanță
+    let idx=null;
+    for(const i of idxs){
+      if (!canPlaceLabel(hours, hours[i], i, 'Mentenanță')) continue;
+      if (freeMin(hours[i])<=0) continue;
+      idx=i; break;
+    }
+    if (idx==null) break;
+
+    const chunk = clamp(needMin, RANGE.mnt[0], Math.min(RANGE.mnt[1], freeMin(hours[idx])));
+    const used  = addEvent(hours[idx], 'Mentenanță', chunk);
+    if (!used) break;
+
+    needMin -= used; guard++;
+  }
+}
+
+async function tryAutoShrink(hours, idxs, rate, want, toggles, prodName){
+  // dacă nu vrei deloc auto-shrink sau ai oprit mentenanța din toggle, ieșim
+  if (!toggles || !toggles.mnt) return;
+
+  // capacitate actuală pe intervalul produsului
+  const cap = idxs.reduce((s,i)=>{
+    const lost   = Math.min(60, totalMin(hours[i]));
+    const earned = 60 - lost;
+    return s + Math.floor(rate * earned / 60);
+  }, 0);
+
+  if (cap <= want) return; // nu e nimic de micșorat
+
+  let needMin = Math.ceil(((cap - want) / rate) * 60);
+  let guard = 0;
+
+  while (needMin > 0 && guard < 64){
+    // doar în orele produsului, fără back-to-back cu Mentenanță
+    const pool = eligibleIn(hours, idxs, RANGE.mnt[0], 'Mentenanță');
+    if (!pool.length) break;
+
+    // ÎNTREABĂ utilizatorul ora
+    const idx = await chooseHour(
+      `Mentenanță (auto) — ${prodName}`,
+      `Trebuie să reducem capacitatea cu ~${needMin}′. Alege ORA (sau Skip).`,
+      hours, pool
+    );
+
+    if (idx == null) break; // user a dat Skip -> nu mai punem nimic
+
+    const chunk = clamp(needMin, RANGE.mnt[0], Math.min(RANGE.mnt[1], freeMin(hours[idx])));
+    const used  = addEvent(hours[idx], 'Mentenanță', chunk);
+    if (!used) break;
+
+    needMin -= used;
+    guard++;
+  }
+}
+
+
+function finalizeProduct(hours, idxs, P){
+  const rate = P.rate || 1;
+
+  // capacități pe oră ca float (fără floor)
+  const capsF = idxs.map(i => {
+    const lost   = Math.min(60, totalMin(hours[i]));
+    const earned = 60 - lost;
+    return rate * earned / 60;   // ex: 1.67, 0.5 etc.
+  });
+
+  // total capacitate = floor(doar la final)
+  const capTot = Math.floor(capsF.reduce((a,b)=>a+b, 0));
+
+  // câte vrei de fapt
+  const want  = (P.actual==null ? idxs.reduce((s,i)=>s+hours[i].plan,0) : P.actual);
+
+  // nu alocăm peste capacitate
+  const goal  = Math.min(want, capTot);
+
+  // distribuție integrală proporțional cu capacitățile float
+  const alloc = toInts(capsF, goal);
+  idxs.forEach((i,k)=> hours[i].act = alloc[k]);
+
+  return {goal, capTot, plan: idxs.reduce((s,i)=>s+hours[i].plan,0), want};
+}
+
+
+/* ===== CALC ===== */
+async function calc(){
+  SEED=1+Math.floor(Math.random()*100000);
+  SEDINTA_PLACED=false; S5_PLACED=false;
+
+  const hours=buildHours(), warn=document.getElementById('capWarn'); warn.style.display='none';
+  if(!products.length){alert('Adaugă cel puțin un produs.');return;}
+
+  const toggles={
+    sedinta:document.getElementById('togSedinta').checked,
+    valid  :document.getElementById('togValid').checked,
+    s5     :document.getElementById('tog5S').checked,
+    co     :document.getElementById('togCO').checked,
+    noz    :document.getElementById('togNoz').checked,
+    mnt    :document.getElementById('togMnt').checked,
+  };
+
+  let cur=0, per=[], sumWant=0, sumGoal=0, overMsgs=[];
+  for(let p=0;p<products.length;p++){
+    const P=products[p];
+    const pr=planProduct(hours,cur,P,p); cur=pr.endIdx;
+
+    const want=(P.actual==null?pr.planInts.reduce((a,b)=>a+b,0):P.actual); sumWant+=want;
+    const planSum=pr.planInts.reduce((a,b)=>a+b,0);
+    if(want>planSum) overMsgs.push(`Produs ${P.name}: realizat ${want} > target ${planSum} (+${want-planSum}).`);
+
+    await applyReasons(hours, pr.hourIdx, P, p, products.length, toggles);
+
+    // dacă încă avem capacitate > realizat, adaug automat mentenanță până se explică deficitul
+    await tryAutoShrink(hours, pr.hourIdx, P.rate||1, want, toggles, P.name);
+
+
+    const {goal}=finalizeProduct(hours, pr.hourIdx, P); sumGoal+=goal;
+
+    per.push({name:P.name, idxs:pr.hourIdx});
+  }
+
+  let msgs=[];
+  if(overMsgs.length) msgs.push(...overMsgs.map(m=>'Overproduction: '+m));
+  warn.style.display=msgs.length?'block':'none';
+  warn.innerHTML=msgs.map(m=>`• ${m}`).join('<br>');
+
+
+  render(hours, per);
+}
+
+/* ===== RENDER ===== */
+function render(hours, per){
+  const cum=new Map(); per.forEach(p=>cum.set(p.name,0));
+  const endSet=new Set(per.map(p=>p.idxs[p.idxs.length-1]));
+
+  let tAct=0,tEarn=0,tLost=0;
+  let html=`<table><thead><tr>
+    <th>Hour</th><th>Product / Run rate</th><th>Actual / Total</th>
+    <th>Earned</th><th>Lost</th><th>Time</th><th>Comment</th></tr></thead><tbody>`;
+
+  hours.forEach((h,i)=>{
+    const prod=h.prod?`${h.prod} / ${h.runRate}`:'';
+    const lost=Math.min(60,totalMin(h));
+    const earnedDisp=60-lost;
+    tLost+=lost; tEarn+=earnedDisp; tAct+=h.act;
+
+    let at='';
+    if(h.prod){
+      const prev=cum.get(h.prod)||0, now=prev+h.act; cum.set(h.prod,now);
+      const good = h.act >= (h.plan||0);
+      at = `<span class="${good?'okcell':'defcell'}">${h.act} / ${now}</span>`;
+    }
+
+    const timeLines=h.events.map(e=>`<span class="evt-line">${fmtMin(e.minutes)}</span>`).join('');
+    const commLines=h.events.map(e=>`<span class="evt-line">${e.label}</span>`).join('');
+
+    html+=`<tr>
+      <td class="mono">${h.label}</td>
+      <td>${prod}</td>
+      <td class="mono">${h.prod?at:''}</td>
+      <td class="mono">${fmtMin(earnedDisp)}</td>
+      <td class="mono">${fmtMin(lost)}</td>
+      <td class="mono evt">${timeLines}</td>
+      <td class="evt">${commLines}</td>
+    </tr>`;
+
+    if(endSet.has(i)){
+      const P=per.find(pp=>pp.idxs.includes(i));
+      let a=0,e=0,l=0; P.idxs.forEach(k=>{l+=Math.min(60,totalMin(hours[k])); e+=60-Math.min(60,totalMin(hours[k])); a+=hours[k].act;});
+      html+=`<tr class="subrow" style="background:#101217">
+        <th colspan="2">Subtotal ${P.name}</th>
+        <th class="mono">${a}</th>
+        <th class="mono">${fmtMin(e)}</th>
+        <th class="mono">${fmtMin(l)}</th>
+        <th class="mono">${fmtMin(l)}</th>
+        <th></th></tr>`;
+    }
+  });
+
+  html+=`</tbody><tfoot>
+    <tr><th>Total</th><th></th>
+      <th class="mono">${tAct}</th>
+      <th class="mono">${fmtMin(tEarn)}</th>
+      <th class="mono">${fmtMin(tLost)}</th>
+      <th class="mono">${fmtMin(tLost)}</th>
+      <th></th></tr>
+  </tfoot></table>`;
+  document.getElementById('out').innerHTML=html;
+}
+
+
+// ===== Calculator plăci (independent de planner) =====
+function cp_num(v){ const x = parseFloat(v); return (isNaN(x)?null:x); }
+
+function cp_calculeaza(){
+  const panel      = cp_num(document.getElementById('cp_panel').value);
+  const aparPanel  = cp_num(document.getElementById('cp_aparPanel').value);
+  const scanTot    = cp_num(document.getElementById('cp_scanariTot').value);
+  const msg        = document.getElementById('cp_msg');
+  const out        = document.getElementById('cp_out');
+
+  msg.textContent = '';
+  out.innerHTML   = '';
+
+  if (panel==null || panel<=0 || aparPanel==null || aparPanel<=0 || scanTot==null || scanTot<0){
+    msg.textContent = 'Completează corect toate câmpurile.';
+    return;
+  }
+
+  let reale = (scanTot * panel) / aparPanel;
+  if (reale < 0) reale = 0;
+
+  const isInt = Number.isInteger(reale);
+  const txt   = isInt ? `${reale}` : `${reale.toFixed(2)}`;
+
+  // badge rezultat, aliniat dreapta
+  out.innerHTML = `<span class="${isInt?'okcell':'defcell'}">Ai făcut <b>${txt}</b> plăci</span>`;
+}
+
+
+</script>
+</body>
+</html>
