@@ -69,11 +69,11 @@
   </div>
 
   <div class="toggles">
-    <label><input id="togSedinta" type="checkbox" checked> Ședință 10–15′</label>
-    <label><input id="togValid"   type="checkbox" checked> Validare linie 10–15′</label>
-    <label><input id="tog5S"      type="checkbox" checked> 5S+1 10–15′</label>
+    <label><input id="togSedinta" type="checkbox"> Ședință 10–15′</label>
+    <label><input id="togValid"   type="checkbox"> Validare linie 10–15′</label>
+    <label><input id="tog5S"      type="checkbox"> 5S+1 10–15′</label>
     <label><input id="togCO"      type="checkbox" checked> Schimbare produs 20–40′</label>
-    <label><input id="togNoz"     type="checkbox" checked> Curățare nozzel 5–15′</label>
+    <label><input id="togNoz"     type="checkbox"> Curățare nozzel 5–10′</label>
     <label><input id="togMnt"     type="checkbox" checked> Mentenanță 10–50′</label>
   </div>
 </section>
@@ -161,7 +161,7 @@
 
 <script>
 /* ===== RANGES ===== */
-const RANGE={ sedinta:[10,15], valid:[10,15], s5:[10,15], co:[20,40], nozzle:[5,15], mnt:[10,50] };
+const RANGE={ sedinta:[10,15], valid:[10,15], s5:[10,15], co:[20,40], nozzle:[5,10], mnt:[10,50] };
 
 /* ===== FLAGS ===== */
 let SEDINTA_PLACED=false;
@@ -170,6 +170,7 @@ let S5_PLACED=false;
 /* ===== UTILS ===== */
 let SEED=1, products=[];
 function rnd(){SEED=(SEED*9301+49297)%233280;return SEED/233280;}
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function pad2(x){return (x<10?'0'+x:''+x)}
 function fmtMin(x){return (x|0)+'′'}
 function parseTime(t){
@@ -200,7 +201,8 @@ function ovlRep(A,B,s,e){const D=1440;let k0=Math.floor((A-e)/D),k1=Math.floor((
 function addProduct(){
   const name=document.getElementById('pName').value.trim();
   const rate=+document.getElementById('pRate').value||0;
-  const target=+document.getElementById('pTarget').value||0;
+  const targetStr = (document.getElementById('pTarget').value||'').trim();
+  const target = targetStr === '' ? null : (+targetStr || 0);
   const aS=(document.getElementById('pActual').value||'').trim();
   const actual=aS===''?null:+aS;
   if(!name||rate<=0){alert('Completează nume și rată.');return;}
@@ -210,7 +212,7 @@ function addProduct(){
 function renderProdList(){
   const box=document.getElementById('prodList');
   if(products.length===0){box.innerHTML='<i>Niciun produs.</i>';return;}
-  box.innerHTML='<b>Produse:</b> '+products.map((p,i)=>`<span class="chip">${i+1}. ${p.name} — ${p.rate}/h, target ${p.target}${p.actual!=null?`, realizat ${p.actual}`:''}</span>`).join(' ')
+  box.innerHTML='<b>Produse:</b> '+products.map((p,i)=>`<span class="chip">${i+1}. ${p.name} — ${p.rate}/h, target ${p.target==null?'—':p.target}${p.actual!=null?`, realizat ${p.actual}`:''}</span>`).join(' ')
     +' <button class="btn" onclick="products=[];renderProdList()">reset</button>';
 }
 
@@ -252,19 +254,33 @@ function addEvent(h,label,min){const use=Math.min(min,freeMin(h));if(use>0)h.eve
 
 /* ===== PLAN ===== */
 function planProduct(hours,startIdx,P,prodIndex){
-  let cur=startIdx,remain=P.target,first=true,idxs=[],caps=[];
-  while(remain>0 && cur<hours.length){
-    const h=hours[cur]; const active=Math.max(0,60-pauseMin(h));
-    const cap=(P.rate*active)/60;
+  let cur=startIdx, first=true, idxs=[], caps=[];
+  // dacă target e null, tratăm "fără limită" → umplem tot ce prindem
+  let remain = (P.target==null ? Number.POSITIVE_INFINITY : P.target);
+
+  while(cur<hours.length && (P.target==null || remain>0)){
+    const h=hours[cur]; 
+    const active=Math.max(0,60-pauseMin(h));
+    const cap=(P.rate*active)/60;  // capacitate reală în oră
+
     if(cap>0){
-      if(!h.prod){h.prod=P.name;h.prodIndex=prodIndex;if(first){h.isStart=true;first=false;}}
-      const use=Math.min(cap,remain); caps.push(use); idxs.push(cur); remain-=use; h.runRate=Math.floor(cap);
+      if(!h.prod){ h.prod=P.name; h.prodIndex=prodIndex; if(first){h.isStart=true; first=false;} }
+      const use = (P.target==null ? cap : Math.min(cap, remain));
+      caps.push(use);
+      idxs.push(cur);
+      if(P.target!=null) remain -= use;
+      h.runRate=P.rate; // nominal
     }
     cur++;
   }
-  const ints=toInts(caps,P.target); idxs.forEach((i,k)=>hours[i].plan+=ints[k]);
-  return {hourIdx:idxs,planInts:ints,endIdx:cur};
+
+  // dacă target e null → planul = floor(capacitate) pe fiecare oră (fără scalare)
+  const ints = (P.target==null) ? caps.map(c=>Math.floor(c)) : toInts(caps, P.target);
+  idxs.forEach((i,k)=> hours[i].plan += ints[k]);
+
+  return {hourIdx:idxs, planInts:ints, endIdx:cur};
 }
+
 
 /* ===== MODAL ===== */
 function chooseHour(title, sub, hours, eligibleIdxs){
@@ -400,30 +416,7 @@ function capTotFor(hours, idxs, rate){
   },0);
 }
 
-function tryAutoShrink(hours, idxs, rate, want){
-  let cap = capTotFor(hours, idxs, rate);
-  if (cap <= want) return;
 
-  let needMin = Math.ceil(((cap - want) / rate) * 60);
-  let guard=0;
-
-  while (needMin>0 && guard<64){
-    // prima oră din intervalul produsului cu loc liber și fără back-to-back mentenanță
-    let idx=null;
-    for(const i of idxs){
-      if (!canPlaceLabel(hours, hours[i], i, 'Mentenanță')) continue;
-      if (freeMin(hours[i])<=0) continue;
-      idx=i; break;
-    }
-    if (idx==null) break;
-
-    const chunk = clamp(needMin, RANGE.mnt[0], Math.min(RANGE.mnt[1], freeMin(hours[idx])));
-    const used  = addEvent(hours[idx], 'Mentenanță', chunk);
-    if (!used) break;
-
-    needMin -= used; guard++;
-  }
-}
 
 async function tryAutoShrink(hours, idxs, rate, want, toggles, prodName){
   // dacă nu vrei deloc auto-shrink sau ai oprit mentenanța din toggle, ieșim
@@ -465,6 +458,7 @@ async function tryAutoShrink(hours, idxs, rate, want, toggles, prodName){
 }
 
 
+/* ======= FINALIZE PRODUCT (GREEDY FIFO) ======= */
 function finalizeProduct(hours, idxs, P){
   const rate = P.rate || 1;
 
@@ -475,7 +469,7 @@ function finalizeProduct(hours, idxs, P){
     return rate * earned / 60;   // ex: 1.67, 0.5 etc.
   });
 
-  // total capacitate = floor(doar la final)
+  // total capacitate (floor doar pe final pentru comparații)
   const capTot = Math.floor(capsF.reduce((a,b)=>a+b, 0));
 
   // câte vrei de fapt
@@ -484,15 +478,107 @@ function finalizeProduct(hours, idxs, P){
   // nu alocăm peste capacitate
   const goal  = Math.min(want, capTot);
 
-  // distribuție integrală proporțional cu capacitățile float
-  const alloc = toInts(capsF, goal);
+  // ✅ GREEDY: umple de la stânga la dreapta fiecare oră, până se termină targetul
+  let remain = goal;
+  const alloc = idxs.map((i, k) => {
+    const cap = Math.floor(capsF[k]); // câte pot produce maxim în ora respectivă
+    const use = Math.max(0, Math.min(cap, remain));
+    remain -= use;
+    return use;
+  });
+
   idxs.forEach((i,k)=> hours[i].act = alloc[k]);
 
   return {goal, capTot, plan: idxs.reduce((s,i)=>s+hours[i].plan,0), want};
 }
 
+/* ===== AUTO-JUSTIFY (priorități: CO → 5S+1 → MNT; CO doar la granițe; NU recalculăm need; evităm ultima oră) ===== */
+function autoJustifyLeftover(hours, toggles, per){
+  // minute idle totale de "acoperit" (ore fără produs)
+  const idle = hours
+    .map((h,i)=>({i,h,earned:60 - Math.min(60,totalMin(h))}))
+    .filter(x => !x.h.prod && x.earned > 0);
 
-/* ===== CALC ===== */
+  let need = idle.reduce((s,x)=>s + x.earned, 0);   // bugetul de justificat
+  let changed=false;
+
+  /* 1) Schimbare produs (CO) — DOAR la granițe; max 2; scade din need */
+  if (toggles.co && need > 0){
+    const boundaries=[];
+    for (let i=0;i<hours.length-1;i++){
+      const A=hours[i], B=hours[i+1];
+      if (A.prod && B.prod && A.prod!==B.prod) boundaries.push([i,i+1]);
+    }
+    let placedCO=0;
+    for (const [iPrev,iNext] of boundaries){
+      if (need<=0 || placedCO>=2) break;
+
+      let idx=null;
+      // prefer prima oră a produsului următor
+      if (freeMin(hours[iNext])>=RANGE.co[0] && canPlaceLabel(hours,hours[iNext],iNext,'Schimbare produs')) idx=iNext;
+      else if (freeMin(hours[iPrev])>=RANGE.co[0] && canPlaceLabel(hours,hours[iPrev],iPrev,'Schimbare produs')) idx=iPrev;
+      if (idx==null) continue;
+
+      const free  = freeMin(hours[idx]);
+      const chunk = clamp(need, RANGE.co[0], Math.min(RANGE.co[1], free)); // 20–40, dar ≤ need & ≤ liber
+      const used  = addEvent(hours[idx], 'Schimbare produs', chunk);
+      if (used>0){ need = Math.max(0, need-used); placedCO++; changed=true; }
+    }
+  }
+
+  /* 2) 5S+1 — pune-l chiar dacă need a ajuns 0 (dacă e bifat), prefer ultima oră idle */
+  if (toggles.s5){
+    // ultima oră idle, dacă există
+    if (idle.length){
+      const i = idle[idle.length-1].i;
+      if (canPlaceLabel(hours,hours[i],i,'5S+1') && freeMin(hours[i])>=RANGE.s5[0]){
+        const use = addEvent(hours[i], '5S+1', clamp(freeMin(hours[i]), RANGE.s5[0], RANGE.s5[1]));
+        if (use>0){ need = Math.max(0, need-use); /* poate fi 0 deja, e ok */ }
+      }
+    } else {
+      // dacă nu avem oră idle, încearcă în ultimele ore cu produs care au loc
+      for (let i=hours.length-1;i>=0;i--){
+        if (!hours[i].prod) continue;
+        if (!canPlaceLabel(hours,hours[i],i,'5S+1')) continue;
+        const free=freeMin(hours[i]); if (free<RANGE.s5[0]) continue;
+        const use=addEvent(hours[i],'5S+1', clamp(free, RANGE.s5[0], RANGE.s5[1]));
+        if (use>0){ need = Math.max(0, need-use); changed=true; break; }
+      }
+    }
+  }
+
+  /* 3) Mentenanță — doar dacă MAI e need > 0; evită ultima oră dacă se poate */
+  if (toggles.mnt && need > 0){
+    const idleIdxs = idle.map(x=>x.i);
+    // mai întâi toate idle cu excepția ultimei
+    for (let k=0; k<idleIdxs.length-1 && need>0; k++){
+      const i=idleIdxs[k];
+      if (!canPlaceLabel(hours,hours[i],i,'Mentenanță')) continue;
+      const free=freeMin(hours[i]); if (free<RANGE.mnt[0]) continue;
+      const used=addEvent(hours[i],'Mentenanță', clamp(need, RANGE.mnt[0], Math.min(RANGE.mnt[1], free)));
+      if (used>0){ need = Math.max(0, need-used); }
+    }
+    // dacă tot mai rămâne need și există ultima oră idle → pune acolo
+    if (need>0 && idleIdxs.length){
+      const i=idleIdxs[idleIdxs.length-1];
+      if (canPlaceLabel(hours,hours[i],i,'Mentenanță') && freeMin(hours[i])>=RANGE.mnt[0]){
+        const used=addEvent(hours[i],'Mentenanță', clamp(need, RANGE.mnt[0], Math.min(RANGE.mnt[1], freeMin(hours[i]))));
+        if (used>0){ need = Math.max(0, need-used); }
+      }
+    }
+  }
+
+  /* 4) dacă am atins ore din intervalele produselor (ex. CO pus pe granițe), refinalizează cantitățile */
+  if (changed){
+    for (const p of per){
+      const P = products.find(x=>x.name===p.name);
+      if (P) finalizeProduct(hours, p.idxs, P);
+    }
+  }
+}
+
+
+/* ===== CALC (MOTIVE DOAR DACĂ EXISTĂ DEFICIT REAL) ===== */
 async function calc(){
   SEED=1+Math.floor(Math.random()*100000);
   SEDINTA_PLACED=false; S5_PLACED=false;
@@ -509,22 +595,25 @@ async function calc(){
     mnt    :document.getElementById('togMnt').checked,
   };
 
-  let cur=0, per=[], sumWant=0, sumGoal=0, overMsgs=[];
+  let cur=0, per=[], overMsgs=[];
   for(let p=0;p<products.length;p++){
     const P=products[p];
     const pr=planProduct(hours,cur,P,p); cur=pr.endIdx;
 
-    const want=(P.actual==null?pr.planInts.reduce((a,b)=>a+b,0):P.actual); sumWant+=want;
+    const want=(P.actual==null?pr.planInts.reduce((a,b)=>a+b,0):P.actual);
     const planSum=pr.planInts.reduce((a,b)=>a+b,0);
     if(want>planSum) overMsgs.push(`Produs ${P.name}: realizat ${want} > target ${planSum} (+${want-planSum}).`);
 
-    await applyReasons(hours, pr.hourIdx, P, p, products.length, toggles);
+    // finalizează produsul, GREEDY
+    const res = finalizeProduct(hours, pr.hourIdx, P);
 
-    // dacă încă avem capacitate > realizat, adaug automat mentenanță până se explică deficitul
-    await tryAutoShrink(hours, pr.hourIdx, P.rate||1, want, toggles, P.name);
-
-
-    const {goal}=finalizeProduct(hours, pr.hourIdx, P); sumGoal+=goal;
+    // ✅ DOAR DACĂ există deficit real: plan > goal
+    if(res.goal < res.plan){
+      await applyReasons(hours, pr.hourIdx, P, p, products.length, toggles);
+      await tryAutoShrink(hours, pr.hourIdx, P.rate||1, want, toggles, P.name);
+      // re-finalizează după ce am introdus motive (poate s-a schimbat capacitatea)
+      finalizeProduct(hours, pr.hourIdx, P);
+    }
 
     per.push({name:P.name, idxs:pr.hourIdx});
   }
@@ -534,9 +623,11 @@ async function calc(){
   warn.style.display=msgs.length?'block':'none';
   warn.innerHTML=msgs.map(m=>`• ${m}`).join('<br>');
 
-
+  autoJustifyLeftover(hours, toggles, per);  // CO doar pe granițe + MNT pe idle + refinalizare
   render(hours, per);
 }
+
+
 
 /* ===== RENDER ===== */
 function render(hours, per){
